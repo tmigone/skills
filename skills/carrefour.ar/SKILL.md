@@ -1,22 +1,29 @@
 ---
 name: carrefour.ar
 description: "Use this skill to search products, build shopping lists, and generate checkout URLs for Carrefour Argentina. Activate when the user wants to buy groceries online in Argentina, manage a shopping list, or create a shareable cart link — even if they don't explicitly mention 'Carrefour',  'supermercado' or 'super'."
+version: "0.2.0"
 ---
 
 # Carrefour Argentina Shopping Assistant
 
-Build a shopping list over time, then generate a shareable cart URL for checkout.
+Build a shopping list over days or weeks, then generate a shareable cart URL. The skill never buys anything: `checkout` emits links that a human opens while logged in to carrefour.com.ar and pays for themselves. Everything before that is list-building against the public product catalog.
 
 ## Prerequisites
 
 - **Dependencies:** `curl`, `jq`, `bc`
 - **Environment:** `SKILLS_STATE_DIR` (optional; defaults to `<skill>/state`)
 
-## Available scripts
+## Data Storage
+
+Shopping list persists at:
+```
+$SKILLS_STATE_DIR/carrefour.ar/shopping_list.json
+```
+If `SKILLS_STATE_DIR` is not set, defaults to `<skill>/state/carrefour.ar/`.
+
+## Usage
 
 - **`scripts/carrefour.sh`** — Search products, manage shopping list, generate checkout URLs
-
-## Commands
 
 ```bash
 scripts/carrefour.sh <command> [args]
@@ -54,19 +61,10 @@ scripts/carrefour.sh list
 ```bash
 scripts/carrefour.sh checkout
 ```
-Returns one or more URLs (max 150 items each). Share with the person who will complete the purchase. They should:
+Returns one or more URLs. Share with the person who will complete the purchase. They should:
 1. Login to carrefour.com.ar
-2. Click the URL(s)
-3. Items are added to their cart
-4. Complete checkout
-
-## Data Storage
-
-Shopping list persists at:
-```
-$SKILLS_STATE_DIR/carrefour.ar/shopping_list.json
-```
-If `SKILLS_STATE_DIR` is not set, defaults to `<skill>/state/carrefour.ar/`.
+2. Click every URL, in order — items accumulate in the cart rather than replacing it
+3. Complete checkout
 
 ## Workflow
 
@@ -78,16 +76,7 @@ If `SKILLS_STATE_DIR` is not set, defaults to `<skill>/state/carrefour.ar/`.
 
 ## Gotchas
 
-- SKUs are numeric but must be stored/passed as strings
-- API returns products with `price: 0` for unavailable items — always filter these out
 - Cart URLs break at ~4000 characters — the script auto-splits into multiple URLs
-- The `seller` field defaults to `"1"` (Carrefour direct); other sellers exist but aren't supported
+- The cart holds 300 items total. A list built up over weeks can drift into this — warn before it does
 - Product names from the API can be very long — truncate for display
 - Adding the same SKU twice increases quantity rather than creating a duplicate
-
-## Technical Notes
-
-- Uses VTEX Catalog System API (public, no auth required)
-- Cart URLs support up to 150 items each (~4000 chars)
-- Multiple URLs can be clicked sequentially (items accumulate)
-- VTEX cart limit: 300 items total

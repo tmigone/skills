@@ -1,6 +1,7 @@
 ---
 name: {{skill-name}}
 description: "<What it does, then when to trigger. Include literal phrases the user would actually say — including ones that never name the tool. Close with a nudge for the non-obvious cases: 'even if they don't explicitly mention X'.>"
+version: "x.y.z"
 ---
 
 <!--
