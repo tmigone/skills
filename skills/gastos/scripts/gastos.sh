@@ -118,7 +118,8 @@ case "$cmd" in
     [[ "$month"      =~ ^[0-9]+$ ]] && [ "$month" -ge 0 ] && [ "$month" -le 11 ] \
       || die "month must be 0-11 (0-indexed: 0=Jan, 6=Jul)"
     case "$currency" in USD|ARS) ;; *) die "currency must be USD or ARS" ;; esac
-    [[ "$amount" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] || die "amount must be a number"
+    # The API rejects negatives with a 400 — catch it here rather than round-trip.
+    [[ "$amount" =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "amount must be a non-negative number (0 is valid — marks the month handled)"
     body=$(printf '{"expenseId":%d,"year":%d,"month":%d,"currency":"%s","amount":%s}' \
       "$expense_id" "$year" "$month" "$currency" "$amount")
     api_post "/api/period" "$body"
