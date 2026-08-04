@@ -8,6 +8,7 @@ Personal agent skills — small, self-contained instruction sets that teach an a
 |---|---|
 | [`carrefour.ar`](skills/carrefour.ar) | Search groceries, build a shopping list, generate a shareable Carrefour Argentina cart URL |
 | [`cueva`](skills/cueva) | Record and query fees paid to exchange crypto for cash |
+| [`dolarito`](skills/dolarito) | Look up USD/ARS rates, current or on any date back to 2011 |
 | [`gastos`](skills/gastos) | Track recurring household expenses in ARS + USD |
 | [`invoice-email`](skills/invoice-email) | Assemble the email that accompanies an invoice from pre-approved snippets |
 | [`invoice-generator`](skills/invoice-generator) | Generate PDF invoices from TOML configs |
