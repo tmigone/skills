@@ -21,7 +21,7 @@ usage:
   gastos.sh periods [--from YYYY-MM] [--to YYYY-MM]
   gastos.sh pay <expenseId> <year> <month> <currency> <amount> [--add|--set]
     month is 0-indexed (0=Jan, 6=Jul); currency is USD or ARS
-    amount is a whole number
+    amount: whole units recommended — decimals round per currency and can disagree
     --add  record one more payment on top of the month's running total
     --set  replace the month's total with this amount
     neither: the server defaults to "set", and refuses the write outright for
@@ -146,13 +146,15 @@ case "$cmd" in
     [[ "$month"      =~ ^[0-9]+$ ]] && [ "$month" -ge 0 ] && [ "$month" -le 11 ] \
       || die "month must be 0-11 (0-indexed: 0=Jan, 6=Jul)"
     case "$currency" in USD|ARS) ;; *) die "currency must be USD or ARS" ;; esac
-    # Whole units only. The API rejects negatives with a 400, and it rounds each
-    # currency independently off the raw amount — so a fractional payment can
-    # store 0 in the currency you sent while the other column keeps a real
-    # balance. Nothing server-side catches that, and the bad row is invisible in
-    # every total built on it afterwards, so refuse the decimal here instead.
-    [[ "$amount" =~ ^[0-9]+$ ]] \
-      || die "amount must be a whole number (a fraction rounds each currency separately and corrupts the row; 0 is valid with --set)"
+    # The API rejects negatives with a 400 — catch it here rather than round-trip.
+    [[ "$amount" =~ ^[0-9]+(\.[0-9]+)?$ ]] \
+      || die "amount must be a non-negative number (0 is valid — use --set 0 to mark a month handled)"
+    # Rounding is the server's job, but it rounds each currency independently off
+    # the raw amount, so a fractional payment can store 0 in the currency you sent
+    # while the other column keeps a real balance. Pass it through; just say so.
+    case "$amount" in
+      *.*) echo "gastos.sh: warning — $amount is not a whole number; each currency rounds separately, so the stored USD and ARS may not agree" >&2 ;;
+    esac
 
     if [ -n "$op" ]; then
       body=$(printf '{"expenseId":%d,"year":%d,"month":%d,"currency":"%s","amount":%s,"op":"%s"}' \
