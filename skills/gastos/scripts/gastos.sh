@@ -8,7 +8,7 @@
 #   gastos.sh expenses
 #   gastos.sh unpaid  [--month YYYY-MM]
 #   gastos.sh periods [--from YYYY-MM] [--to YYYY-MM]
-#   gastos.sh pay <expenseId> <year> <month> <currency> <amount>
+#   gastos.sh pay <expenseId> <year> <month> <currency> <amount> [--add|--set]
 set -euo pipefail
 
 die() { echo "gastos.sh: $*" >&2; exit 1; }
@@ -19,8 +19,13 @@ usage:
   gastos.sh expenses
   gastos.sh unpaid  [--month YYYY-MM]
   gastos.sh periods [--from YYYY-MM] [--to YYYY-MM]
-  gastos.sh pay <expenseId> <year> <month> <currency> <amount>
+  gastos.sh pay <expenseId> <year> <month> <currency> <amount> [--add|--set]
     month is 0-indexed (0=Jan, 6=Jul); currency is USD or ARS
+    amount is a whole number
+    --add  record one more payment on top of the month's running total
+    --set  replace the month's total with this amount
+    neither: the server defaults to "set", and refuses the write outright for
+             expenses whose accumulate flag is true (see: gastos.sh expenses)
 EOF
   exit "${1:-1}"
 }
@@ -48,6 +53,17 @@ api_post() {
     -H "content-type: application/json" \
     -d "$2" \
     "$BASE$1"
+}
+
+# accumulate_rejected <response-body> — true when the write was refused because
+# the expense holds several payments per month. Keys on the `accumulate` field
+# rather than the message, which is prose and free to change. jq stays optional.
+accumulate_rejected() {
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$1" | jq -e '.accumulate == true' >/dev/null 2>&1
+  else
+    printf '%s' "$1" | grep -q '"accumulate"[[:space:]]*:[[:space:]]*true'
+  fi
 }
 
 # url-encode a value for a query string (handles spaces, etc.)
@@ -111,18 +127,61 @@ case "$cmd" in
     ;;
 
   pay)
-    [ $# -eq 5 ] || usage 1
-    expense_id="$1" year="$2" month="$3" currency="$4" amount="$5"
+    op=""
+    args=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --add|--set)
+          [ -z "$op" ] || die "--add and --set are mutually exclusive, and take no repeats"
+          op="${1#--}"; shift ;;
+        --*) die "unknown arg for pay: $1" ;;
+        *) args+=("$1"); shift ;;
+      esac
+    done
+    [ ${#args[@]} -eq 5 ] || usage 1
+    expense_id="${args[0]}" year="${args[1]}" month="${args[2]}"
+    currency="${args[3]}" amount="${args[4]}"
     [[ "$expense_id" =~ ^[0-9]+$ ]] || die "expenseId must be an integer"
     [[ "$year"       =~ ^[0-9]{4}$ ]] || die "year must be YYYY"
     [[ "$month"      =~ ^[0-9]+$ ]] && [ "$month" -ge 0 ] && [ "$month" -le 11 ] \
       || die "month must be 0-11 (0-indexed: 0=Jan, 6=Jul)"
     case "$currency" in USD|ARS) ;; *) die "currency must be USD or ARS" ;; esac
-    # The API rejects negatives with a 400 — catch it here rather than round-trip.
-    [[ "$amount" =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "amount must be a non-negative number (0 is valid — marks the month handled)"
-    body=$(printf '{"expenseId":%d,"year":%d,"month":%d,"currency":"%s","amount":%s}' \
-      "$expense_id" "$year" "$month" "$currency" "$amount")
-    api_post "/api/period" "$body"
+    # Whole units only. The API rejects negatives with a 400, and it rounds each
+    # currency independently off the raw amount — so a fractional payment can
+    # store 0 in the currency you sent while the other column keeps a real
+    # balance. Nothing server-side catches that, and the bad row is invisible in
+    # every total built on it afterwards, so refuse the decimal here instead.
+    [[ "$amount" =~ ^[0-9]+$ ]] \
+      || die "amount must be a whole number (a fraction rounds each currency separately and corrupts the row; 0 is valid with --set)"
+
+    if [ -n "$op" ]; then
+      body=$(printf '{"expenseId":%d,"year":%d,"month":%d,"currency":"%s","amount":%s,"op":"%s"}' \
+        "$expense_id" "$year" "$month" "$currency" "$amount" "$op")
+    else
+      # No op key at all. The server defaults to "set" for ordinary expenses and
+      # refuses accumulate ones outright — and that refusal is the point: it is
+      # what stands in for a silent overwrite when the caller skipped the lookup.
+      body=$(printf '{"expenseId":%d,"year":%d,"month":%d,"currency":"%s","amount":%s}' \
+        "$expense_id" "$year" "$month" "$currency" "$amount")
+    fi
+
+    rc=0
+    out=$(api_post "/api/period" "$body") || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      printf '%s\n' "$out"
+    else
+      printf '%s\n' "$out" >&2
+      if accumulate_rejected "$out"; then
+        cat >&2 <<EOF
+
+gastos.sh: expense $expense_id can hold several payments in one month, so the
+write needs an explicit op. Nothing was recorded. Re-run with one of:
+  --add   count $amount as one more payment on top of the month's total
+  --set   make $amount the month's total, discarding payments already recorded
+EOF
+      fi
+      exit "$rc"
+    fi
     ;;
 
   -h|--help|help) usage 0 ;;
